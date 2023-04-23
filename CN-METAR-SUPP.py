@@ -173,8 +173,12 @@ if __name__ == '__main__':
             config = json.loads(content)
         else:
             config = {'CONCERNED': [], 'RECORD': {}}
-        config['CONCERNED'] = input(
-            "Airports to concern (seperated by space)>").upper().split()
+        concerned = input(
+            "Airports to concern (seperated by space, starting with + for additons)>").upper()
+        if len(concerned) and concerned[0] == '+':
+            config['CONCERNED'].extend(concerned[1:].split())
+        else:
+            config['CONCERNED'] = concerned.split()
         content = json.dumps(config, ensure_ascii=False, indent=2)
         f.seek(0)
         f.truncate()
