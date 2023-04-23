@@ -13,7 +13,7 @@ PORT_METAR = 18080
 PORT_PAC = 18081
 INTERVAL = 15*60  # seconds
 
-PAC_CONTENT = """function FindProxyForURL(url, host) {if (dnsDomainIs(host, "metar.vatsim.net")) {return "PROXY 127.0.0.1:__PORT__";}}"""
+PAC_CONTENT = """function FindProxyForURL(url, host) {if (dnsDomainIs(host, "metar.vatsim.net")) {return "PROXY 127.0.0.1:__PORT__";} return "__FALLBACK__";}"""
 CONFIG_FILE = "METAR.json"
 
 
@@ -67,7 +67,7 @@ class PACHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         content = b""
         if self.path.endswith("pac"):
-            content = PAC_CONTENT.replace("__PORT__", str(PORT_METAR)).encode()
+            content = PAC_CONTENT.encode()
             print(f"[{format_time(time.time())}-PAC] (GET)")
         self.send_response(200)
         self.send_header('Content-type', 'text/plain')
@@ -76,6 +76,21 @@ class PACHandler(BaseHTTPRequestHandler):
 
     def log_message(self, format, *args):
         return
+
+
+def get_http_proxy():
+    registry_path = r'Software\Microsoft\Windows\CurrentVersion\Internet Settings'
+    key = winreg.OpenKey(winreg.HKEY_CURRENT_USER,
+                         registry_path, 0, winreg.KEY_ALL_ACCESS)
+    registry_key = 'ProxyEnable'
+    value, _regtype = winreg.QueryValueEx(key, registry_key)
+    if not value:
+        winreg.CloseKey(key)
+        return ''
+    registry_key = 'ProxyServer'
+    value, _regtype = winreg.QueryValueEx(key, registry_key)
+    winreg.CloseKey(key)
+    return value
 
 
 def set_proxy_pac(pac_url=str()):
@@ -120,8 +135,16 @@ def job_METAR(port):
 
 
 def job_PAC(port_pac, port_metar):
-    global PORT_PAC, PORT_METAR
-    PORT_PAC, PORT_METAR = port_pac, port_metar
+    global PORT_PAC, PAC_CONTENT
+    PORT_PAC = port_pac
+    http_proxy = get_http_proxy()
+    if len(http_proxy):
+        print(f"[INFO] PAC fallback on {http_proxy}")
+        PAC_CONTENT = PAC_CONTENT.replace(
+            "__FALLBACK__", f"PROXY {http_proxy}")
+    else:
+        PAC_CONTENT = PAC_CONTENT.replace("__FALLBACK__", "DIRECT")
+    PAC_CONTENT = PAC_CONTENT.replace("__PORT__", str(port_metar))
     print(f"[INFO] PAC server is listening on port {PORT_PAC}")
     httpd = socketserver.TCPServer(("0.0.0.0", PORT_PAC), PACHandler)
     try:
