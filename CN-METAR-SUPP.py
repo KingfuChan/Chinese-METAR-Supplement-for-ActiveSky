@@ -12,6 +12,7 @@ from http.server import BaseHTTPRequestHandler
 PORT_METAR = 18080
 PORT_PAC = 18081
 INTERVAL = 15*60  # seconds
+INVALID = []
 
 PAC_CONTENT = """function FindProxyForURL(url, host) {if (dnsDomainIs(host, "metar.vatsim.net")) {return "PROXY 127.0.0.1:__PORT__";} return "__FALLBACK__";}"""
 CONFIG_FILE = "METAR.json"
@@ -35,7 +36,7 @@ class METARHandler(BaseHTTPRequestHandler):
                     metar = config['RECORD'][id]['METAR']
                     content = metar.encode()
                     print(f"[{format_time(time.time())}-METAR] (OLD)\n\t{metar}")
-                else:
+                elif id not in INVALID:
                     url = f"http://xmairavt7.xiamenair.com/WarningPage/AirportInfo?arp4code={id}"
                     response = urllib.request.urlopen(url, timeout=5)
                     data = response.read().decode("utf-8")
@@ -51,6 +52,10 @@ class METARHandler(BaseHTTPRequestHandler):
                               ensure_ascii=False, indent=2)
                     content = metar.encode()
                     print(f"[{format_time(time.time())}-METAR] (NEW)\n\t{metar}")
+            except AttributeError as e:
+                INVALID.append(id)
+                print(
+                    f"[{format_time(time.time())}-METAR] (ERR-REMOVED)\n\t{id}:", e)
             except Exception as e:
                 print(f"[{format_time(time.time())}-METAR] (ERR)\n\t{id}:", e)
 
