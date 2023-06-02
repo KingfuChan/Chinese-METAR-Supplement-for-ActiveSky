@@ -14,6 +14,7 @@ PORT_PAC = 18081
 INTERVAL = 15*60  # seconds
 INVALID = []
 
+METAR_URL = "http://xmairavt7.xiamenair.com/WarningPage/AirportInfo?arp4code=__ICAO__"
 PAC_CONTENT = """function FindProxyForURL(url, host) {if (dnsDomainIs(host, "metar.vatsim.net")) {return "PROXY 127.0.0.1:__PORT__";} return "__FALLBACK__";}"""
 CONFIG_FILE = "METAR.json"
 
@@ -25,7 +26,7 @@ def format_time(time: float) -> str:
 class METARHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         content = b""
-        pattern_url = r"metar\.php\?id=((ZB|ZG|ZJ|ZS|ZY|ZP|ZU|ZW|ZL|ZH)[A-Z]{2})"
+        pattern_url = r"metar\.php\?id=([A-Z]{4})"
         if matches := re.search(pattern_url, self.path, re.IGNORECASE | re.DOTALL):
             id = matches.group(1)
             config = json.load(open(CONFIG_FILE, 'r'))
@@ -37,8 +38,8 @@ class METARHandler(BaseHTTPRequestHandler):
                     content = metar.encode()
                     print(f"[{format_time(time.time())}-METAR] (OLD)\n\t{metar}")
                 elif id not in INVALID:
-                    url = f"http://xmairavt7.xiamenair.com/WarningPage/AirportInfo?arp4code={id}"
-                    response = urllib.request.urlopen(url, timeout=5)
+                    response = urllib.request.urlopen(
+                        METAR_URL.replace("__ICAO__", id), timeout=5)
                     data = response.read().decode("utf-8")
                     metar = re.search(
                         r"<p>(METAR|SPECI) (.*)</p>", data).group(2)
@@ -128,9 +129,10 @@ def set_proxy_pac(pac_url=str()):
     internet_set_option(0, internet_option_settings_changed, 0, 0)
 
 
-def job_METAR(port):
-    global PORT_METAR
+def job_METAR(port, url):
+    global PORT_METAR, METAR_URL
     PORT_METAR = port
+    METAR_URL = url if len(url) else METAR_URL
     print(f"[INFO] METAR server is listening on port {PORT_METAR}")
     httpd = socketserver.TCPServer(("0.0.0.0", PORT_METAR), METARHandler)
     try:
@@ -184,15 +186,18 @@ if __name__ == '__main__':
             config['CONCERNED'].extend(concerned[1:].split())
         else:
             config['CONCERNED'] = concerned.split()
+            config['RECORD'] = {}
         content = json.dumps(config, ensure_ascii=False, indent=2)
         f.seek(0)
         f.truncate()
         f.write(content)
 
+    url = input("Enter URL for METAR requests, replace ICAO code to '__ICAO__':")
+
     pm = random.randint(10001, 65535)
     pp = random.randint(10001, 65535)
     p1 = multiprocessing.Process(target=job_winreg, args=(pp,))
-    p2 = multiprocessing.Process(target=job_METAR, args=(pm,))
+    p2 = multiprocessing.Process(target=job_METAR, args=(pm, url))
     p3 = multiprocessing.Process(target=job_PAC, args=(pp, pm))
     p1.start()
     p2.start()
