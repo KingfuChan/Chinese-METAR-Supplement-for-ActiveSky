@@ -11,7 +11,7 @@ from http.server import BaseHTTPRequestHandler
 
 PORT_METAR = 18080
 PORT_PAC = 18081
-INTERVAL = 15*60  # seconds
+INTERVAL = 9*60  # seconds
 INVALID = []
 
 METAR_URL = "http://xmairavt7.xiamenair.com/WarningPage/AirportInfo?arp4code=__ICAO__"
@@ -42,9 +42,7 @@ class METARHandler(BaseHTTPRequestHandler):
                         METAR_URL.replace("__ICAO__", id), timeout=5)
                     data = response.read().decode("utf-8")
                     metar = re.search(
-                        r"<p>(METAR|SPECI) (.*)</p>", data).group(2)
-                    metar = id + ' ' + \
-                        re.search(f"{id} (.*)", metar).group(1)
+                        r"<([a-zA-Z0-9]+)>(METAR|SPECI) (.+?)</\1>", data).group(3)
                     config['RECORD'][id] = {
                         'METAR': metar,
                         'TIME': time.time()
