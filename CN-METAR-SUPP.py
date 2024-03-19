@@ -43,6 +43,8 @@ class METARHandler(BaseHTTPRequestHandler):
                     data = response.read().decode("utf-8")
                     metar = re.search(
                         r"<([a-zA-Z0-9]+)>(METAR|SPECI) (.+?)</\1>", data).group(3)
+                    metar = metar.replace('=', '')  # deal with trailing '='
+                    metar = metar.replace("CAVOK", "// ////")  # discrepancies
                     config['RECORD'][id] = {
                         'METAR': metar,
                         'TIME': time.time()
