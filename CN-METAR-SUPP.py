@@ -1,22 +1,25 @@
+import datetime
+import json
+import multiprocessing
 import random
 import re
-import json
-import time
-import datetime
-import multiprocessing
 import socketserver
+import sys
+import time
 import urllib.request
 import winreg
 from http.server import BaseHTTPRequestHandler
 
-PORT_METAR = 18080
-PORT_PAC = 18081
+PORT_METAR = None  # change to None to randomize
+PORT_PAC = None  # change to None to randomize
 INTERVAL = 9*60  # seconds
-INVALID = []
+REPLACE_CAVOK_NSC = True
 
-METAR_URL = "http://xmairavt7.xiamenair.com/WarningPage/AirportInfo?arp4code=__ICAO__"
+METAR_URL = sys.argv[1] if len(sys.argv) > 1\
+    else "http://xmairavt7.xiamenair.com/WarningPage/AirportInfo?arp4code=__ICAO__"
 PAC_CONTENT = """function FindProxyForURL(url, host) {if (dnsDomainIs(host, "metar.vatsim.net")) {return "PROXY 127.0.0.1:__PORT__";} return "__FALLBACK__";}"""
 CONFIG_FILE = "METAR.json"
+INVALID = []
 
 
 def format_time(time: float) -> str:
@@ -30,13 +33,15 @@ class METARHandler(BaseHTTPRequestHandler):
         if matches := re.search(pattern_url, self.path, re.IGNORECASE | re.DOTALL):
             id = matches.group(1)
             config = json.load(open(CONFIG_FILE, 'r'))
+
             try:
                 if id in config['RECORD'].keys() and \
                     id not in config['CONCERNED'] and \
                         time.time()-config['RECORD'][id]['TIME'] < INTERVAL:
                     metar = config['RECORD'][id]['METAR']
+                    mtime = config['RECORD'][id]['TIME']
+                    mtype = "OLD"
                     content = metar.encode()
-                    print(f"[{format_time(time.time())}-METAR] (OLD)\n\t{metar}")
                 elif id not in INVALID:
                     response = urllib.request.urlopen(
                         METAR_URL.replace("__ICAO__", id), timeout=5)
@@ -44,19 +49,29 @@ class METARHandler(BaseHTTPRequestHandler):
                     metar = re.search(
                         r"<([a-zA-Z0-9]+)>(METAR|SPECI) (.+?)</\1>", data).group(3)
                     metar = metar.replace('=', '')  # deal with trailing '='
-                    metar = metar.replace("CAVOK", "// ////")  # discrepancies
-                    config['RECORD'][id] = {
-                        'METAR': metar,
-                        'TIME': time.time()
-                    }
-                    json.dump(config, open(CONFIG_FILE, 'w'),
-                              ensure_ascii=False, indent=2)
-                    content = metar.encode()
-                    print(f"[{format_time(time.time())}-METAR] (NEW)\n\t{metar}")
+                    mtime = time.time()
+                    mtype = "NEW"
+
+                # METAR post-process
+                config['RECORD'][id] = {
+                    'METAR': metar,
+                    'TIME': mtime
+                }
+                json.dump(config, open(CONFIG_FILE, 'w'),
+                          ensure_ascii=False, indent=2)
+                msg = f"\t{metar}"
+                if REPLACE_CAVOK_NSC:
+                    metar = metar.replace("CAVOK", "9999 ////")
+                    metar = metar.replace("NSC", "////")
+                    msg += f"\n\t{metar}"
+                content = metar.encode()
+                print(f"[{format_time(time.time())}-METAR] ({mtype})\n{msg}")
+
             except AttributeError as e:
                 INVALID.append(id)
                 print(
                     f"[{format_time(time.time())}-METAR] (ERR-REMOVED)\n\t{id}:", e)
+
             except Exception as e:
                 print(f"[{format_time(time.time())}-METAR] (ERR)\n\t{id}:", e)
 
@@ -133,7 +148,8 @@ def job_METAR(port, url):
     global PORT_METAR, METAR_URL
     PORT_METAR = port
     METAR_URL = url if len(url) else METAR_URL
-    print(f"[INFO] METAR server is listening on port {PORT_METAR}")
+    print(f"[INFO] Using {METAR_URL} as METAR source.")
+    print(f"[INFO] METAR server is listening on port {PORT_METAR}.")
     httpd = socketserver.TCPServer(("0.0.0.0", PORT_METAR), METARHandler)
     try:
         httpd.serve_forever()
@@ -146,13 +162,13 @@ def job_PAC(port_pac, port_metar):
     PORT_PAC = port_pac
     http_proxy = get_http_proxy()
     if len(http_proxy):
-        print(f"[INFO] PAC fallback on {http_proxy}")
+        print(f"[INFO] PAC fallback on {http_proxy}.")
         PAC_CONTENT = PAC_CONTENT.replace(
             "__FALLBACK__", f"PROXY {http_proxy}")
     else:
         PAC_CONTENT = PAC_CONTENT.replace("__FALLBACK__", "DIRECT")
     PAC_CONTENT = PAC_CONTENT.replace("__PORT__", str(port_metar))
-    print(f"[INFO] PAC server is listening on port {PORT_PAC}")
+    print(f"[INFO] PAC server is listening on port {PORT_PAC}.")
     httpd = socketserver.TCPServer(("0.0.0.0", PORT_PAC), PACHandler)
     try:
         httpd.serve_forever()
@@ -165,7 +181,7 @@ def job_winreg(port):
     PORT_PAC = port
     time.sleep(5)
     set_proxy_pac(f"http://127.0.0.1:{PORT_PAC}/metar.pac")
-    print("[INFO] PAC ON")
+    print("[INFO] PAC ON.")
 
 
 if __name__ == '__main__':
@@ -192,12 +208,10 @@ if __name__ == '__main__':
         f.truncate()
         f.write(content)
 
-    url = input("Enter URL for METAR requests, replace ICAO code to '__ICAO__':")
-
-    pm = random.randint(10001, 65535)
-    pp = random.randint(10001, 65535)
+    pm = random.randint(10001, 65535) if PORT_METAR is None else PORT_METAR
+    pp = random.randint(10001, 65535) if PORT_PAC is None else PORT_PAC
     p1 = multiprocessing.Process(target=job_winreg, args=(pp,))
-    p2 = multiprocessing.Process(target=job_METAR, args=(pm, url))
+    p2 = multiprocessing.Process(target=job_METAR, args=(pm, METAR_URL))
     p3 = multiprocessing.Process(target=job_PAC, args=(pp, pm))
     p1.start()
     p2.start()
@@ -210,8 +224,8 @@ if __name__ == '__main__':
         p1.terminate()
         p2.terminate()
         p3.terminate()
-        print("[INFO] Servers are shutdown")
+        print("[INFO] Servers are shutdown.")
     finally:
         set_proxy_pac()
-        print("[INFO] PAC OFF")
+        print("[INFO] PAC OFF.")
     input("Press Enter to exit...")
