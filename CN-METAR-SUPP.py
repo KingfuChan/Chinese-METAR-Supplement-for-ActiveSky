@@ -29,7 +29,7 @@ def format_time(time: float) -> str:
 class METARHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         content = b""
-        pattern_url = r"metar\.php\?id=([A-Z]{4})"
+        pattern_url = r"metar\.php\?id=(Z[A-Z]{3})"
         if matches := re.search(pattern_url, self.path, re.IGNORECASE | re.DOTALL):
             id = matches.group(1)
             config = json.load(open(CONFIG_FILE, 'r'))
