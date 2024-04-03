@@ -13,7 +13,6 @@ from http.server import BaseHTTPRequestHandler
 PORT_METAR = None  # change to None to randomize
 PORT_PAC = None  # change to None to randomize
 INTERVAL = 9*60  # seconds
-REPLACE_CAVOK_NSC = True
 
 METAR_URL = sys.argv[1] if len(sys.argv) > 1\
     else "http://xmairavt7.xiamenair.com/WarningPage/AirportInfo?arp4code=__ICAO__"
@@ -47,7 +46,7 @@ class METARHandler(BaseHTTPRequestHandler):
                         METAR_URL.replace("__ICAO__", id), timeout=5)
                     data = response.read().decode("utf-8")
                     metar = re.search(
-                        r"<([a-zA-Z0-9]+)>(METAR|SPECI) (.+?)</\1>", data).group(3)
+                        r">?(METAR|SPECI) (.+)<?", data).group(2)
                     metar = metar.replace('=', '')  # deal with trailing '='
                     mtime = time.time()
                     mtype = "NEW"
@@ -59,13 +58,8 @@ class METARHandler(BaseHTTPRequestHandler):
                 }
                 json.dump(config, open(CONFIG_FILE, 'w'),
                           ensure_ascii=False, indent=2)
-                msg = f"\t{metar}"
-                if REPLACE_CAVOK_NSC:
-                    metar = metar.replace("CAVOK", "9999 ////")
-                    metar = metar.replace("NSC", "////")
-                    msg += f"\n\t{metar}"
                 content = metar.encode()
-                print(f"[{format_time(time.time())}-METAR] ({mtype})\n{msg}")
+                print(f"[{format_time(time.time())}-METAR] ({mtype})\n\t{metar}")
 
             except AttributeError as e:
                 INVALID.append(id)
@@ -73,7 +67,7 @@ class METARHandler(BaseHTTPRequestHandler):
                     f"[{format_time(time.time())}-METAR] (ERR-REMOVED)\n\t{id}:", e)
 
             except Exception as e:
-                print(f"[{format_time(time.time())}-METAR] (ERR)\n\t{id}:", e)
+                print(f"[{format_time(time.time())}-METAR] (ERR)\n\t{id}:", repr(e))
 
         self.send_response(200)
         self.send_header('Content-type', 'text/plain')
