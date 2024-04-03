@@ -27,13 +27,13 @@ def format_time(time: float) -> str:
 
 class METARHandler(BaseHTTPRequestHandler):
     def do_GET(self):
-        content = b""
-        pattern_url = r"metar\.php\?id=(Z[A-Z]{3})"
-        if matches := re.search(pattern_url, self.path, re.IGNORECASE | re.DOTALL):
-            id = matches.group(1)
-            config = json.load(open(CONFIG_FILE, 'r'))
+        try:
+            content = b""
+            pattern_url = r"metar\.php\?id=(Z[A-Z]{3})"
+            if matches := re.search(pattern_url, self.path, re.IGNORECASE | re.DOTALL):
+                id = matches.group(1)
+                config = json.load(open(CONFIG_FILE, 'r'))
 
-            try:
                 if id in config['RECORD'].keys() and \
                     id not in config['CONCERNED'] and \
                         time.time()-config['RECORD'][id]['TIME'] < INTERVAL:
@@ -50,6 +50,8 @@ class METARHandler(BaseHTTPRequestHandler):
                     metar = metar.replace('=', '')  # deal with trailing '='
                     mtime = time.time()
                     mtype = "NEW"
+                else:
+                    raise KeyError("Previously removed.")
 
                 # METAR post-process
                 config['RECORD'][id] = {
@@ -61,18 +63,19 @@ class METARHandler(BaseHTTPRequestHandler):
                 content = metar.encode()
                 print(f"[{format_time(time.time())}-METAR] ({mtype})\n\t{metar}")
 
-            except AttributeError as e:
-                INVALID.append(id)
-                print(
-                    f"[{format_time(time.time())}-METAR] (ERR-REMOVED)\n\t{id}:", e)
+        except AttributeError as e:
+            INVALID.append(id)
+            print(
+                f"[{format_time(time.time())}-METAR] (ERR-REMOVED)\n\t{id}:", e)
 
-            except Exception as e:
-                print(f"[{format_time(time.time())}-METAR] (ERR)\n\t{id}:", repr(e))
+        except Exception as e:
+            print(f"[{format_time(time.time())}-METAR] (ERR)\n\t{id}:", repr(e))
 
-        self.send_response(200)
-        self.send_header('Content-type', 'text/plain')
-        self.end_headers()
-        self.wfile.write(content)
+        finally:
+            self.send_response(200)
+            self.send_header('Content-type', 'text/plain')
+            self.end_headers()
+            self.wfile.write(content)
 
     def log_message(self, format, *args):
         return
