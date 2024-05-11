@@ -46,7 +46,7 @@ class METARHandler(BaseHTTPRequestHandler):
                         METAR_URL.replace("__ICAO__", id), timeout=5)
                     data = response.read().decode("utf-8")
                     metar = re.search(
-                        r">?(METAR|SPECI) (.+)<?", data).group(2)
+                        rf">?(?>METAR |SPECI )?({id} [^<]+)<?", data).group(1)
                     metar = metar.replace('=', '')  # deal with trailing '='
                     mtime = time.time()
                     mtype = "NEW"
