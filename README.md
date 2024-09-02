@@ -1,5 +1,8 @@
 # Chinese-METAR-Supplement-for-ActiveSky
 
+> [!WARNING]
+> The script is no longer usable since <https://status.vatsim.net/> now uses <https://metar.vatsim.net/metar.php> (HTTPS) instead of HTTP. Further update is required to adapt HTTPS.
+
 **Methodology:** Use a PAC proxy to intercept requests to metar.vatsim.net and return a value from <http://xmairavt7.xiamenair.com/WarningPage/AirportInfo?arp4code=ZXXX>.
 
 As you may be aware that this API is no longer publicly available, the script allows you to enter your own URL for this service, as long as the response contains a METAR.

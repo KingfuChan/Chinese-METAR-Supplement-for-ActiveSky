@@ -18,7 +18,6 @@ METAR_URL = sys.argv[1] if len(sys.argv) > 1\
     else "http://xmairavt7.xiamenair.com/WarningPage/AirportInfo?arp4code=__ICAO__"
 PAC_CONTENT = """function FindProxyForURL(url, host) {if (dnsDomainIs(host, "metar.vatsim.net")) {return "PROXY 127.0.0.1:__PORT__";} return "__FALLBACK__";}"""
 CONFIG_FILE = "METAR.json"
-INVALID = []
 
 
 def format_time(time: float) -> str:
@@ -29,7 +28,7 @@ class METARHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         try:
             content = b""
-            pattern_url = r"metar\.php\?id=(Z[A-Z]{3})"
+            pattern_url = r"metar.vatsim.net\/.*(Z[A-Z]{3})"
             if matches := re.search(pattern_url, self.path, re.IGNORECASE | re.DOTALL):
                 id = matches.group(1)
                 config = json.load(open(CONFIG_FILE, 'r'))
@@ -41,7 +40,7 @@ class METARHandler(BaseHTTPRequestHandler):
                     mtime = config['RECORD'][id]['TIME']
                     mtype = "OLD"
                     content = metar.encode()
-                elif id not in INVALID:
+                else:
                     response = urllib.request.urlopen(
                         METAR_URL.replace("__ICAO__", id), timeout=5)
                     data = response.read().decode("utf-8")
@@ -50,8 +49,6 @@ class METARHandler(BaseHTTPRequestHandler):
                     metar = metar.replace('=', '')  # deal with trailing '='
                     mtime = time.time()
                     mtype = "NEW"
-                else:
-                    raise KeyError("Previously removed.")
 
                 # METAR post-process
                 config['RECORD'][id] = {
@@ -62,11 +59,6 @@ class METARHandler(BaseHTTPRequestHandler):
                           ensure_ascii=False, indent=2)
                 content = metar.encode()
                 print(f"[{format_time(time.time())}-METAR] ({mtype})\n\t{metar}")
-
-        except AttributeError as e:
-            INVALID.append(id)
-            print(
-                f"[{format_time(time.time())}-METAR] (ERR-REMOVED)\n\t{id}:", e)
 
         except Exception as e:
             print(f"[{format_time(time.time())}-METAR] (ERR)\n\t{id}:", repr(e))
